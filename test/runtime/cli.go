@@ -35,7 +35,7 @@ var _ = Describe("RuntimeCLI", func() {
 	initialize := func() {
 		logger = log.WithFields(logrus.Fields{"testName": "RuntimeCLI"})
 		logger.Info("Starting")
-		vm = helpers.CreateNewRuntimeHelper(helpers.Runtime, logger)
+		vm = helpers.CreateNewRuntimeHelper(helpers.RuntimeVM, logger)
 		areEndpointsReady := vm.WaitEndpointsReady()
 		Expect(areEndpointsReady).Should(BeTrue())
 	}
