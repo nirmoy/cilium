@@ -17,7 +17,6 @@ package k8sTest
 import (
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/cilium/cilium/test/helpers"
 	. "github.com/onsi/ginkgo"
