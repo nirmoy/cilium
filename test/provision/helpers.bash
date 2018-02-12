@@ -36,3 +36,7 @@ function retry_function {
   set -e
   return 1
 }
+
+export GOPATH=/home/vagrant/go
+echo 'export PATH=/home/vagrant/go/bin:/usr/local/clang/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games' >> /home/vagrant/.bashrc
+export PATH=/home/vagrant/go/bin:/usr/local/clang/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games

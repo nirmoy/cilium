@@ -21,6 +21,11 @@ end
 BAZEL_VERSION = ENV['BAZEL_VERSION']
 
 $bootstrap = <<SCRIPT
+export GOPATH=/home/vagrant/go
+echo 'export GOPATH="/home/vagrant/go"' >> /etc/bash.bashrc
+echo 'export PATH="$PATH:$GOPATH/bin"' >> /etc/bash.bashrc
+echo 'export PATH=/home/vagrant/go/bin:/usr/local/clang/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games' >> /home/vagrant/.bashrc
+export PATH=/home/vagrant/go/bin:/usr/local/clang/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games
 echo "----------------------------------------------------------------"
 sudo service docker restart
 echo 'cd ~/go/src/github.com/cilium/cilium' >> /home/vagrant/.bashrc
@@ -33,11 +38,13 @@ mv bpf-map /usr/bin
 SCRIPT
 
 $build = <<SCRIPT
+export PATH=/home/vagrant/go/bin:/usr/local/clang/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games
 ~/go/src/github.com/cilium/cilium/common/build.sh
 rm -fr ~/go/bin/cilium*
 SCRIPT
 
 $install = <<SCRIPT
+export PATH=/home/vagrant/go/bin:/usr/local/clang/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games
 sudo -E make -C /home/vagrant/go/src/github.com/cilium/cilium/ install
 
 sudo mkdir -p /etc/sysconfig
@@ -51,6 +58,7 @@ sudo usermod -a -G cilium vagrant
 SCRIPT
 
 $testsuite = <<SCRIPT
+export PATH=/home/vagrant/go/bin:/usr/local/clang/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games
 make -C ~/go/src/github.com/cilium/cilium/ tests || exit 1
 sudo -E env PATH="${PATH}" make -C ~/go/src/github.com/cilium/cilium/ runtime-tests
 SCRIPT
