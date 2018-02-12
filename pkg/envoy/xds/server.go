@@ -23,7 +23,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/cilium/cilium/pkg/envoy/api"
+	envoy_api_v2 "github.com/cilium/cilium/pkg/envoy/envoy/api/v2"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 
 	"github.com/golang/protobuf/proto"
@@ -81,7 +81,7 @@ func NewServer(sources map[string]ObservableResourceSource, resourceAccessTimeou
 	return &Server{watchers: watchers}
 }
 
-func getXDSRequestFields(req *api.DiscoveryRequest) logrus.Fields {
+func getXDSRequestFields(req *envoy_api_v2.DiscoveryRequest) logrus.Fields {
 	return logrus.Fields{
 		logfields.XDSVersionInfo: req.GetVersionInfo(),
 		logfields.XDSClientNode:  req.GetNode().GetId(),
@@ -97,7 +97,7 @@ func (s *Server) HandleRequestStream(ctx context.Context, stream Stream, default
 
 	streamLog := log.WithField(logfields.XDSStreamID, streamID)
 
-	reqCh := make(chan *api.DiscoveryRequest)
+	reqCh := make(chan *envoy_api_v2.DiscoveryRequest)
 
 	stopRecv := make(chan struct{})
 	defer close(stopRecv)
@@ -155,7 +155,7 @@ type perTypeStreamState struct {
 
 // processRequestStream processes the requests in an xDS stream from a channel.
 func (s *Server) processRequestStream(ctx context.Context, streamLog *logrus.Entry, stream Stream,
-	reqCh <-chan *api.DiscoveryRequest, defaultTypeURL string) error {
+	reqCh <-chan *envoy_api_v2.DiscoveryRequest, defaultTypeURL string) error {
 	// The request state for every type URL.
 	typeStates := make([]perTypeStreamState, len(s.watchers))
 	defer func() {
@@ -233,7 +233,7 @@ func (s *Server) processRequestStream(ctx context.Context, streamLog *logrus.Ent
 				return nil
 			}
 
-			req := recv.Interface().(*api.DiscoveryRequest)
+			req := recv.Interface().(*envoy_api_v2.DiscoveryRequest)
 
 			requestLog := streamLog.WithFields(getXDSRequestFields(req))
 
@@ -342,7 +342,7 @@ func (s *Server) processRequestStream(ctx context.Context, streamLog *logrus.Ent
 
 			responseLog.Infof("sending xDS response with %d resources", len(resp.Resources))
 
-			out := &api.DiscoveryResponse{
+			out := &envoy_api_v2.DiscoveryResponse{
 				VersionInfo: strconv.FormatUint(resp.Version, 10),
 				Resources:   resources,
 				Canary:      resp.Canary,

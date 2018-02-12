@@ -190,10 +190,10 @@ func (ctrl *StreamControl) startHandler(ctx *StreamControlCtx, handler func() er
 
 // Exponential back-off duration, but capped at one second.
 func backoffTime(count uint) time.Duration {
-	d := time.Duration(1<<count) * 25 * time.Millisecond
-	if d > time.Second {
-		return time.Second
+	if count > 6 {
+		count = 6
 	}
+	d := time.Duration(1<<count) * 25 * time.Millisecond
 	return d
 }
 
@@ -212,6 +212,7 @@ func (ctrl *StreamControl) handleVersion(ctx *StreamControlCtx, version uint64, 
 			// Wake up handler for sending, but delay the signal if need to back off
 			// We do an exponential back-off starting at 50ms and doubling by
 			if ctrl.currentVersionNackCount > 0 {
+				log.Debug("Envoy: ", ctrl.name, " NACK count ", ctrl.currentVersionNackCount)
 				go func(version uint64, d time.Duration) {
 					log.Debug("Envoy: ", ctrl.name, " trying version ", version, " again after ", d)
 					time.Sleep(d)

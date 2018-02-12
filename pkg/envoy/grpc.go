@@ -9,7 +9,11 @@ import (
 	"strings"
 
 	"github.com/cilium/cilium/pkg/completion"
-	envoy_api "github.com/cilium/cilium/pkg/envoy/api"
+	envoy_api_v2 "github.com/cilium/cilium/pkg/envoy/envoy/api/v2"
+	envoy_api_v2_core "github.com/cilium/cilium/pkg/envoy/envoy/api/v2/core"
+	envoy_api_v2_listener "github.com/cilium/cilium/pkg/envoy/envoy/api/v2/listener"
+	envoy_api_v2_route "github.com/cilium/cilium/pkg/envoy/envoy/api/v2/route"
+	envoy_config_bootstrap_v2 "github.com/cilium/cilium/pkg/envoy/envoy/config/bootstrap/v2"
 	"github.com/cilium/cilium/pkg/lock"
 	"github.com/cilium/cilium/pkg/policy"
 	"github.com/cilium/cilium/pkg/policy/api"
@@ -29,8 +33,8 @@ import (
 // know about. To be integrated with Cilium policy code.
 type Listener struct {
 	// Configuration
-	proxyPort    uint16              // Proxy redirection port number
-	listenerConf *envoy_api.Listener // Envoy Listener protobuf for this listener (const)
+	proxyPort    uint16                 // Proxy redirection port number
+	listenerConf *envoy_api_v2.Listener // Envoy Listener protobuf for this listener (const)
 
 	// Policy
 	l7rules policy.L7DataMap
@@ -50,8 +54,8 @@ type LDSServer struct {
 	glds *grpc.Server
 	rds  *RDSServer // Reference to RDS server serving route configurations.
 
-	listenersMutex lock.RWMutex        // The rest protected by this
-	listenerProto  *envoy_api.Listener // Generic Envoy Listener protobuf (const)
+	listenersMutex lock.RWMutex           // The rest protected by this
+	listenerProto  *envoy_api_v2.Listener // Generic Envoy Listener protobuf (const)
 	listeners      map[string]*Listener
 	envoyResources map[string]*Listener
 
@@ -71,18 +75,19 @@ func createLDSServer(path, accessLogPath string) *LDSServer {
 
 	ldsServer.glds = grpc.NewServer()
 
-	ldsServer.listenerProto = &envoy_api.Listener{
-		Address: &envoy_api.Address{
-			Address: &envoy_api.Address_SocketAddress{
-				SocketAddress: &envoy_api.SocketAddress{
-					Protocol: envoy_api.SocketAddress_TCP,
-					Address:  "::",
-					// PortSpecifier: &envoy_api.SocketAddress_PortValue{0},
+	ldsServer.listenerProto = &envoy_api_v2.Listener{
+		Address: &envoy_api_v2_core.Address{
+			Address: &envoy_api_v2_core.Address_SocketAddress{
+				SocketAddress: &envoy_api_v2_core.SocketAddress{
+					Protocol:   envoy_api_v2_core.SocketAddress_TCP,
+					Address:    "::",
+					Ipv4Compat: true,
+					// PortSpecifier: &envoy_api_v2_core.SocketAddress_PortValue{0},
 				},
 			},
 		},
-		FilterChains: []*envoy_api.FilterChain{{
-			Filters: []*envoy_api.Filter{{
+		FilterChains: []*envoy_api_v2_listener.FilterChain{{
+			Filters: []*envoy_api_v2_listener.Filter{{
 				Name: "envoy.http_connection_manager",
 				Config: &structpb.Struct{Fields: map[string]*structpb.Value{
 					"stat_prefix": {&structpb.Value_StringValue{StringValue: "proxy"}},
@@ -95,53 +100,38 @@ func createLDSServer(path, accessLogPath string) *LDSServer {
 									"access_log_path": {&structpb.Value_StringValue{StringValue: accessLogPath}},
 								}}}},
 							}}}},
-							"deprecated_v1": {&structpb.Value_StructValue{StructValue: &structpb.Struct{Fields: map[string]*structpb.Value{
-								"type": {&structpb.Value_StringValue{StringValue: "decoder"}},
-							}}}},
 						}}}},
 						{&structpb.Value_StructValue{StructValue: &structpb.Struct{Fields: map[string]*structpb.Value{
-							"name": {&structpb.Value_StringValue{StringValue: "envoy.router"}},
-							"config": {&structpb.Value_StructValue{StructValue: &structpb.Struct{Fields: map[string]*structpb.Value{
-								"deprecated_v1": {&structpb.Value_BoolValue{BoolValue: true}},
-							}}}},
-							"deprecated_v1": {&structpb.Value_StructValue{StructValue: &structpb.Struct{Fields: map[string]*structpb.Value{
-								"type": {&structpb.Value_StringValue{StringValue: "decoder"}},
-							}}}},
+							"name":   {&structpb.Value_StringValue{StringValue: "envoy.router"}},
+							"config": {&structpb.Value_StructValue{StructValue: &structpb.Struct{Fields: map[string]*structpb.Value{}}}},
 						}}}},
 					}}}},
 					"rds": {&structpb.Value_StructValue{StructValue: &structpb.Struct{Fields: map[string]*structpb.Value{
 						"config_source": {&structpb.Value_StructValue{StructValue: &structpb.Struct{Fields: map[string]*structpb.Value{
 							"api_config_source": {&structpb.Value_StructValue{StructValue: &structpb.Struct{Fields: map[string]*structpb.Value{
-								"api_type":     {&structpb.Value_NumberValue{NumberValue: float64(envoy_api.ApiConfigSource_GRPC)}},
-								"cluster_name": {&structpb.Value_StringValue{StringValue: "rdsCluster"}},
+								"api_type":      {&structpb.Value_NumberValue{NumberValue: float64(envoy_api_v2_core.ApiConfigSource_GRPC)}},
+								"cluster_names": {&structpb.Value_StringValue{StringValue: "rdsCluster"}},
 							}}}},
 						}}}},
 						// "route_config_name": {&structpb.Value_StringValue{StringValue: "route_config_name"}},
 					}}}},
 				}},
-				DeprecatedV1: &envoy_api.Filter_DeprecatedV1{
-					Type: "read",
-				},
 			}},
 		}},
-		ListenerFilterChain: []*envoy_api.Filter{{
+		ListenerFilters: []*envoy_api_v2_listener.ListenerFilter{{
 			Name: "cilium.bpf_metadata",
 			Config: &structpb.Struct{Fields: map[string]*structpb.Value{
-				"deprecated_v1": {&structpb.Value_BoolValue{BoolValue: true}},
-				"value": {&structpb.Value_StructValue{StructValue: &structpb.Struct{Fields: map[string]*structpb.Value{
-					"is_ingress": {&structpb.Value_BoolValue{BoolValue: false}},
-				}}}},
+				"is_ingress": {&structpb.Value_BoolValue{BoolValue: false}},
+				"bpf_root":   {&structpb.Value_StringValue{StringValue: "/sys/fs/bpf"}},
+				"identity":   {&structpb.Value_NumberValue{NumberValue: float64(0)}},
 			}},
-			DeprecatedV1: &envoy_api.Filter_DeprecatedV1{
-				Type: "accept",
-			},
 		}},
 	}
 
 	ldsServer.listeners = make(map[string]*Listener)
 	ldsServer.envoyResources = make(map[string]*Listener)
 
-	envoy_api.RegisterListenerDiscoveryServiceServer(ldsServer.glds, ldsServer)
+	envoy_api_v2.RegisterListenerDiscoveryServiceServer(ldsServer.glds, ldsServer)
 	// Register reflection service on gRPC server.
 	reflection.Register(ldsServer.glds)
 
@@ -162,7 +152,7 @@ func (s *LDSServer) addListener(name string, port uint16, l7rules policy.L7DataM
 	listener := &Listener{
 		proxyPort:     port,
 		l7rules:       l7rules,
-		listenerConf:  proto.Clone(s.listenerProto).(*envoy_api.Listener),
+		listenerConf:  proto.Clone(s.listenerProto).(*envoy_api_v2.Listener),
 		logger:        logger,
 		StreamControl: makeStreamControl(resourceName),
 	}
@@ -172,10 +162,10 @@ func (s *LDSServer) addListener(name string, port uint16, l7rules policy.L7DataM
 
 	// Fill in the listener-specific parts
 	listener.listenerConf.Name = name
-	listener.listenerConf.Address.GetSocketAddress().PortSpecifier = &envoy_api.SocketAddress_PortValue{PortValue: uint32(port)}
+	listener.listenerConf.Address.GetSocketAddress().PortSpecifier = &envoy_api_v2_core.SocketAddress_PortValue{PortValue: uint32(port)}
 	listener.listenerConf.FilterChains[0].Filters[0].Config.Fields["rds"].GetStructValue().Fields["route_config_name"] = &structpb.Value{Kind: &structpb.Value_StringValue{StringValue: resourceName}}
 	if isIngress {
-		listener.listenerConf.ListenerFilterChain[0].Config.Fields["value"].GetStructValue().Fields["is_ingress"].GetKind().(*structpb.Value_BoolValue).BoolValue = true
+		listener.listenerConf.ListenerFilters[0].Config.Fields["is_ingress"].GetKind().(*structpb.Value_BoolValue).BoolValue = true
 	}
 	listener.listenerConf.FilterChains[0].Filters[0].Config.Fields["http_filters"].GetListValue().Values[0].GetStructValue().Fields["config"].GetStructValue().Fields["value"].GetStructValue().Fields["listener_id"] = &structpb.Value{Kind: &structpb.Value_StringValue{StringValue: resourceName}}
 	s.listeners[name] = listener
@@ -253,7 +243,7 @@ type RDSServer struct {
 	grds *grpc.Server
 	lds  *LDSServer // Reference to LDS server
 
-	allowAction envoy_api.Route_Route // Pass route action to use in route rules (const)
+	allowAction envoy_api_v2_route.Route_Route // Pass route action to use in route rules (const)
 
 	// Envoy opens an individual RDS stream for each Listener, so
 	// the streams are managed by the individual Listeners.
@@ -271,11 +261,11 @@ func createRDSServer(path string, lds *LDSServer) *RDSServer {
 
 	rdsServer.grds = grpc.NewServer()
 
-	rdsServer.allowAction = envoy_api.Route_Route{Route: &envoy_api.RouteAction{
-		ClusterSpecifier: &envoy_api.RouteAction_Cluster{Cluster: "cluster1"},
+	rdsServer.allowAction = envoy_api_v2_route.Route_Route{Route: &envoy_api_v2_route.RouteAction{
+		ClusterSpecifier: &envoy_api_v2_route.RouteAction_Cluster{Cluster: "cluster1"},
 	}}
 
-	envoy_api.RegisterRouteDiscoveryServiceServer(rdsServer.grds, rdsServer)
+	envoy_api_v2.RegisterRouteDiscoveryServiceServer(rdsServer.grds, rdsServer)
 	// Register reflection service on gRPC server.
 	reflection.Register(rdsServer.grds)
 
@@ -295,7 +285,7 @@ func (s *RDSServer) stop() {
 	os.Remove(s.path)
 }
 
-func (s *RDSServer) translatePolicyRule(h api.PortRuleHTTP) *envoy_api.Route {
+func (s *RDSServer) translatePolicyRule(h api.PortRuleHTTP) *envoy_api_v2_route.Route {
 	// Count the number of header matches we need
 	cnt := len(h.Headers)
 	if h.Path != "" {
@@ -310,13 +300,13 @@ func (s *RDSServer) translatePolicyRule(h api.PortRuleHTTP) *envoy_api.Route {
 
 	var ruleRef string
 	isRegex := wrappers.BoolValue{Value: true}
-	headers := make([]*envoy_api.HeaderMatcher, 0, cnt)
+	headers := make([]*envoy_api_v2_route.HeaderMatcher, 0, cnt)
 	if h.Path != "" {
-		headers = append(headers, &envoy_api.HeaderMatcher{Name: ":path", Value: h.Path, Regex: &isRegex})
+		headers = append(headers, &envoy_api_v2_route.HeaderMatcher{Name: ":path", Value: h.Path, Regex: &isRegex})
 		ruleRef = `PathRegexp("` + h.Path + `")`
 	}
 	if h.Method != "" {
-		headers = append(headers, &envoy_api.HeaderMatcher{Name: ":method", Value: h.Method, Regex: &isRegex})
+		headers = append(headers, &envoy_api_v2_route.HeaderMatcher{Name: ":method", Value: h.Method, Regex: &isRegex})
 		if ruleRef != "" {
 			ruleRef += " && "
 		}
@@ -324,7 +314,7 @@ func (s *RDSServer) translatePolicyRule(h api.PortRuleHTTP) *envoy_api.Route {
 	}
 
 	if h.Host != "" {
-		headers = append(headers, &envoy_api.HeaderMatcher{Name: ":authority", Value: h.Host, Regex: &isRegex})
+		headers = append(headers, &envoy_api_v2_route.HeaderMatcher{Name: ":authority", Value: h.Host, Regex: &isRegex})
 		if ruleRef != "" {
 			ruleRef += " && "
 		}
@@ -340,11 +330,11 @@ func (s *RDSServer) translatePolicyRule(h api.PortRuleHTTP) *envoy_api.Route {
 			// Remove ':' in "X-Key: true"
 			key := strings.TrimRight(strs[0], ":")
 			// Header presence and matching (literal) value needed.
-			headers = append(headers, &envoy_api.HeaderMatcher{Name: key, Value: strs[1]})
+			headers = append(headers, &envoy_api_v2_route.HeaderMatcher{Name: key, Value: strs[1]})
 			ruleRef += key + `","` + strs[1]
 		} else {
 			// Only header presence needed
-			headers = append(headers, &envoy_api.HeaderMatcher{Name: strs[0]})
+			headers = append(headers, &envoy_api_v2_route.HeaderMatcher{Name: strs[0]})
 			ruleRef += strs[0]
 		}
 		ruleRef += `")`
@@ -353,13 +343,13 @@ func (s *RDSServer) translatePolicyRule(h api.PortRuleHTTP) *envoy_api.Route {
 	// Envoy v2 API has a Path Regex, but it has not been
 	// implemented yet, so we must always match the root of the
 	// path to not miss anything.
-	return &envoy_api.Route{
-		Match: &envoy_api.RouteMatch{
-			PathSpecifier: &envoy_api.RouteMatch_Prefix{Prefix: "/"},
+	return &envoy_api_v2_route.Route{
+		Match: &envoy_api_v2_route.RouteMatch{
+			PathSpecifier: &envoy_api_v2_route.RouteMatch_Prefix{Prefix: "/"},
 			Headers:       headers,
 		},
 		Action: &s.allowAction,
-		Metadata: &envoy_api.Metadata{
+		Metadata: &envoy_api_v2_core.Metadata{
 			FilterMetadata: map[string]*structpb.Struct{
 				"envoy.router": {Fields: map[string]*structpb.Value{
 					"cilium_rule_ref": {&structpb.Value_StringValue{StringValue: ruleRef}},
@@ -370,7 +360,7 @@ func (s *RDSServer) translatePolicyRule(h api.PortRuleHTTP) *envoy_api.Route {
 }
 
 // FetchRoutes implements the gRPC serving of DiscoveryRequest for RouteDiscoveryService
-func (s *RDSServer) FetchRoutes(ctx context.Context, req *envoy_api.DiscoveryRequest) (*envoy_api.DiscoveryResponse, error) {
+func (s *RDSServer) FetchRoutes(ctx context.Context, req *envoy_api_v2.DiscoveryRequest) (*envoy_api_v2.DiscoveryResponse, error) {
 	log.Debug("Envoy: RDS DiscoveryRequest: ", req.String())
 	// Empty (or otherwise unparseable) string is treated as version zero.
 	version, _ := strconv.ParseUint(req.VersionInfo, 10, 64)
@@ -388,7 +378,7 @@ func (s *RDSServer) FetchRoutes(ctx context.Context, req *envoy_api.DiscoveryReq
 		resources = s.appendRoutes(resources, l)
 	}
 
-	return &envoy_api.DiscoveryResponse{
+	return &envoy_api_v2.DiscoveryResponse{
 		VersionInfo: strconv.FormatUint(sendVersion, 10),
 		Resources:   resources,
 		Canary:      false,
@@ -396,7 +386,7 @@ func (s *RDSServer) FetchRoutes(ctx context.Context, req *envoy_api.DiscoveryReq
 	}, nil
 }
 
-func (s *RDSServer) recv(rds envoy_api.RouteDiscoveryService_StreamRoutesServer) (uint64, []string, string, error) {
+func (s *RDSServer) recv(rds envoy_api_v2.RouteDiscoveryService_StreamRoutesServer) (uint64, []string, string, error) {
 	req, err := rds.Recv()
 	if err == io.EOF {
 		return 0, nil, "", err
@@ -414,7 +404,7 @@ func (s *RDSServer) recv(rds envoy_api.RouteDiscoveryService_StreamRoutesServer)
 }
 
 // StreamRoutes implements the gRPC bidirectional streaming of RouteDiscoveryService
-func (s *RDSServer) StreamRoutes(rds envoy_api.RouteDiscoveryService_StreamRoutesServer) error {
+func (s *RDSServer) StreamRoutes(rds envoy_api_v2.RouteDiscoveryService_StreamRoutesServer) error {
 	// deadline, ok := rds.Context().Deadline()
 
 	// Envoy RDS syntax allows multiple listeners to be present in a single request, but it
@@ -452,11 +442,11 @@ func (s *RDSServer) StreamRoutes(rds envoy_api.RouteDiscoveryService_StreamRoute
 }
 
 // Called with streamcontrol mutex held.
-func (s *RDSServer) pushRoutes(rds envoy_api.RouteDiscoveryService_StreamRoutesServer, typeurl string, listener *Listener) error {
+func (s *RDSServer) pushRoutes(rds envoy_api_v2.RouteDiscoveryService_StreamRoutesServer, typeurl string, listener *Listener) error {
 	resources := make([]*any.Any, 0, 1)
 	resources = s.appendRoutes(resources, listener)
 
-	dr := &envoy_api.DiscoveryResponse{
+	dr := &envoy_api_v2.DiscoveryResponse{
 		VersionInfo: strconv.FormatUint(listener.currentVersion, 10),
 		Resources:   resources,
 		Canary:      false,
@@ -471,7 +461,7 @@ func (s *RDSServer) pushRoutes(rds envoy_api.RouteDiscoveryService_StreamRoutesS
 }
 
 func (s *RDSServer) appendRoutes(resources []*any.Any, listener *Listener) []*any.Any {
-	routes := make([]*envoy_api.Route, 0, len(listener.l7rules))
+	routes := make([]*envoy_api_v2_route.Route, 0, len(listener.l7rules))
 	for _, ep := range listener.l7rules {
 		// XXX: We should translate the fromEndpoints selector
 		// (the key of the l7rules map) to a filter in Envoy
@@ -480,9 +470,9 @@ func (s *RDSServer) appendRoutes(resources []*any.Any, listener *Listener) []*an
 			routes = append(routes, s.translatePolicyRule(h))
 		}
 	}
-	routeconfig := &envoy_api.RouteConfiguration{
+	routeconfig := &envoy_api_v2.RouteConfiguration{
 		Name: listener.name,
-		VirtualHosts: []*envoy_api.VirtualHost{{
+		VirtualHosts: []*envoy_api_v2_route.VirtualHost{{
 			Name:    listener.name,
 			Domains: []string{"*"},
 			Routes:  routes,
@@ -500,7 +490,7 @@ func (s *RDSServer) appendRoutes(resources []*any.Any, listener *Listener) []*an
 }
 
 // FetchListeners implements the gRPC serving of DiscoveryRequest for ListenerDiscoveryService
-func (s *LDSServer) FetchListeners(ctx context.Context, req *envoy_api.DiscoveryRequest) (*envoy_api.DiscoveryResponse, error) {
+func (s *LDSServer) FetchListeners(ctx context.Context, req *envoy_api_v2.DiscoveryRequest) (*envoy_api_v2.DiscoveryResponse, error) {
 	s.listenersMutex.Lock()
 	defer s.listenersMutex.Unlock()
 	log.Debug("Envoy: LDS DiscoveryRequest: ", req.String())
@@ -510,7 +500,7 @@ func (s *LDSServer) FetchListeners(ctx context.Context, req *envoy_api.Discovery
 	return s.buildListeners(req.TypeUrl), nil
 }
 
-func (s *LDSServer) recv(lds envoy_api.ListenerDiscoveryService_StreamListenersServer) (uint64, string, error) {
+func (s *LDSServer) recv(lds envoy_api_v2.ListenerDiscoveryService_StreamListenersServer) (uint64, string, error) {
 	req, err := lds.Recv()
 	if err == io.EOF {
 		return 0, "", err
@@ -528,7 +518,7 @@ func (s *LDSServer) recv(lds envoy_api.ListenerDiscoveryService_StreamListenersS
 }
 
 // StreamListeners implements the gRPC bidirectional streaming of ListenerDiscoveryService
-func (s *LDSServer) StreamListeners(lds envoy_api.ListenerDiscoveryService_StreamListenersServer) error {
+func (s *LDSServer) StreamListeners(lds envoy_api_v2.ListenerDiscoveryService_StreamListenersServer) error {
 	// deadline, ok := lds.Context().Deadline()
 
 	var ctx StreamControlCtx
@@ -553,7 +543,7 @@ func (s *LDSServer) StreamListeners(lds envoy_api.ListenerDiscoveryService_Strea
 }
 
 // Called with streamcontrol mutex held.
-func (s *LDSServer) pushListeners(lds envoy_api.ListenerDiscoveryService_StreamListenersServer, typeurl string) error {
+func (s *LDSServer) pushListeners(lds envoy_api_v2.ListenerDiscoveryService_StreamListenersServer, typeurl string) error {
 	s.listenersMutex.Lock()
 	defer s.listenersMutex.Unlock()
 
@@ -564,7 +554,7 @@ func (s *LDSServer) pushListeners(lds envoy_api.ListenerDiscoveryService_StreamL
 	return err
 }
 
-func (s *LDSServer) buildListeners(typeurl string) *envoy_api.DiscoveryResponse {
+func (s *LDSServer) buildListeners(typeurl string) *envoy_api_v2.DiscoveryResponse {
 	resources := make([]*any.Any, 0, len(s.listeners))
 	for _, l := range s.listeners {
 		a, err := ptypes.MarshalAny(l.listenerConf)
@@ -575,7 +565,7 @@ func (s *LDSServer) buildListeners(typeurl string) *envoy_api.DiscoveryResponse 
 		}
 	}
 
-	return &envoy_api.DiscoveryResponse{
+	return &envoy_api_v2.DiscoveryResponse{
 		VersionInfo: strconv.FormatUint(s.currentVersion, 10),
 		Resources:   resources,
 		Canary:      false,
@@ -584,68 +574,64 @@ func (s *LDSServer) buildListeners(typeurl string) *envoy_api.DiscoveryResponse 
 }
 
 func createBootstrap(filePath string, name, cluster, version string, ldsName, ldsSock, rdsName, rdsSock string, envoyClusterName string, adminPort uint32) {
-	bs := &envoy_api.Bootstrap{
-		Node: &envoy_api.Node{Id: name, Cluster: cluster, Metadata: nil, Locality: nil, BuildVersion: version},
-		StaticResources: &envoy_api.Bootstrap_StaticResources{
-			Clusters: []*envoy_api.Cluster{
+	bs := &envoy_config_bootstrap_v2.Bootstrap{
+		Node: &envoy_api_v2_core.Node{Id: name, Cluster: cluster, Metadata: nil, Locality: nil, BuildVersion: version},
+		StaticResources: &envoy_config_bootstrap_v2.Bootstrap_StaticResources{
+			Clusters: []*envoy_api_v2.Cluster{
 				{
-					Name:            envoyClusterName,
-					Type:            envoy_api.Cluster_ORIGINAL_DST,
-					ConnectTimeout:  &duration.Duration{Seconds: 1, Nanos: 0},
-					CleanupInterval: &duration.Duration{Seconds: 1, Nanos: 500000000},
-					LbPolicy:        envoy_api.Cluster_ORIGINAL_DST_LB,
-					AutoHttp2:       true,
+					Name:              envoyClusterName,
+					Type:              envoy_api_v2.Cluster_ORIGINAL_DST,
+					ConnectTimeout:    &duration.Duration{Seconds: 1, Nanos: 0},
+					CleanupInterval:   &duration.Duration{Seconds: 1, Nanos: 500000000},
+					LbPolicy:          envoy_api_v2.Cluster_ORIGINAL_DST_LB,
+					ProtocolSelection: envoy_api_v2.Cluster_USE_CONFIGURED_PROTOCOL,
 				},
 				{
 					Name:           ldsName,
-					Type:           envoy_api.Cluster_STATIC,
+					Type:           envoy_api_v2.Cluster_STATIC,
 					ConnectTimeout: &duration.Duration{Seconds: 1, Nanos: 0},
-					LbPolicy:       envoy_api.Cluster_ROUND_ROBIN,
-					Hosts: []*envoy_api.Address{
+					LbPolicy:       envoy_api_v2.Cluster_ROUND_ROBIN,
+					Hosts: []*envoy_api_v2_core.Address{
 						{
-							Address: &envoy_api.Address_Pipe{
-								Pipe: &envoy_api.Pipe{Path: ldsSock}},
+							Address: &envoy_api_v2_core.Address_Pipe{
+								Pipe: &envoy_api_v2_core.Pipe{Path: ldsSock}},
 						},
 					},
-					ProtocolOptions: &envoy_api.Cluster_Http2ProtocolOptions{
-						Http2ProtocolOptions: &envoy_api.Http2ProtocolOptions{},
-					},
+					Http2ProtocolOptions: &envoy_api_v2_core.Http2ProtocolOptions{},
 				},
 				{
 					Name:           rdsName,
-					Type:           envoy_api.Cluster_STATIC,
+					Type:           envoy_api_v2.Cluster_STATIC,
 					ConnectTimeout: &duration.Duration{Seconds: 1, Nanos: 0},
-					LbPolicy:       envoy_api.Cluster_ROUND_ROBIN,
-					Hosts: []*envoy_api.Address{
+					LbPolicy:       envoy_api_v2.Cluster_ROUND_ROBIN,
+					Hosts: []*envoy_api_v2_core.Address{
 						{
-							Address: &envoy_api.Address_Pipe{
-								Pipe: &envoy_api.Pipe{Path: rdsSock}},
+							Address: &envoy_api_v2_core.Address_Pipe{
+								Pipe: &envoy_api_v2_core.Pipe{Path: rdsSock}},
 						},
 					},
-					ProtocolOptions: &envoy_api.Cluster_Http2ProtocolOptions{
-						Http2ProtocolOptions: &envoy_api.Http2ProtocolOptions{},
+					Http2ProtocolOptions: &envoy_api_v2_core.Http2ProtocolOptions{},
+				},
+			},
+		},
+		DynamicResources: &envoy_config_bootstrap_v2.Bootstrap_DynamicResources{
+			LdsConfig: &envoy_api_v2_core.ConfigSource{
+				ConfigSourceSpecifier: &envoy_api_v2_core.ConfigSource_ApiConfigSource{
+					ApiConfigSource: &envoy_api_v2_core.ApiConfigSource{
+						ApiType:      envoy_api_v2_core.ApiConfigSource_GRPC,
+						ClusterNames: []string{ldsName},
 					},
 				},
 			},
 		},
-		DynamicResources: &envoy_api.Bootstrap_DynamicResources{
-			LdsConfig: &envoy_api.ConfigSource{
-				ConfigSourceSpecifier: &envoy_api.ConfigSource_ApiConfigSource{
-					ApiConfigSource: &envoy_api.ApiConfigSource{
-						ApiType:     envoy_api.ApiConfigSource_GRPC,
-						ClusterName: []string{ldsName},
-					},
-				},
-			},
-		},
-		Admin: &envoy_api.Admin{
+		Admin: &envoy_config_bootstrap_v2.Admin{
 			AccessLogPath: "/dev/null",
-			Address: &envoy_api.Address{
-				Address: &envoy_api.Address_SocketAddress{
-					SocketAddress: &envoy_api.SocketAddress{
-						Protocol:      envoy_api.SocketAddress_TCP,
+			Address: &envoy_api_v2_core.Address{
+				Address: &envoy_api_v2_core.Address_SocketAddress{
+					SocketAddress: &envoy_api_v2_core.SocketAddress{
+						Protocol:      envoy_api_v2_core.SocketAddress_TCP,
 						Address:       "127.0.0.1",
-						PortSpecifier: &envoy_api.SocketAddress_PortValue{PortValue: adminPort},
+						PortSpecifier: &envoy_api_v2_core.SocketAddress_PortValue{PortValue: adminPort},
 					},
 				},
 			},
