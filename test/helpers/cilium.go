@@ -317,15 +317,14 @@ func (s *SSHMeta) GetEndpointsNames() ([]string, error) {
 
 // ManifestsPath returns the path of the directory where manifests (YAMLs
 // containing policies, DaemonSets, etc.) are stored for the runtime tests.
-// TODO: this can just be a constant; there's no need to have a function.
 func (s *SSHMeta) ManifestsPath() string {
-	return fmt.Sprintf("%s/runtime/manifests/", BasePath)
+	return filepath.Join(s.ciliumRootPath, "test", "runtime", "manifests")
 }
 
 // GetFullPath returns the path of file name prepended with the absolute path
 // where manifests (YAMLs containing policies, DaemonSets, etc.) are stored.
 func (s *SSHMeta) GetFullPath(name string) string {
-	return fmt.Sprintf("%s%s", s.ManifestsPath(), name)
+	return filepath.Join(s.ManifestsPath(), name)
 }
 
 // PolicyEndpointsSummary returns the count of whether policy enforcement is
@@ -449,7 +448,7 @@ func (s *SSHMeta) PolicyRenderAndImport(policy string) (int, error) {
 		s.logger.Errorf("PolicyRenderAndImport: cannot create policy file on '%s'", filename)
 		return 0, fmt.Errorf("cannot render the policy:  %s", err)
 	}
-	path := GetFilePath(filename)
+	path := s.GetFilePath(filename)
 	s.logger.Debugf("PolicyRenderAndImport: import policy from '%s'", path)
 	defer os.Remove(filename)
 	return s.PolicyImport(path, HelperTimeout)
@@ -772,4 +771,9 @@ func (s *SSHMeta) WaitUntilReady(timeout time.Duration) error {
 	}
 	err := WithTimeout(body, "Cilium is not ready", &TimeoutConfig{Timeout: timeout})
 	return err
+}
+
+//GetFilePath returns the absolute path of the provided filename
+func (s *SSHMeta) GetFilePath(filename string) string {
+	return filepath.Join(s.ciliumRootPath, "test", filename)
 }
