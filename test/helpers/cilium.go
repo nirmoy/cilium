@@ -19,6 +19,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -35,6 +36,20 @@ const (
 	// specified condition is not met
 	MaxRetries = 30
 )
+
+// CiliumOpts specify the options that can be used in the cilium options
+// template
+type CiliumOpts struct {
+	AutoIPv6NodeRoutes bool
+	Debug              bool
+	DebugVerbose       string
+	K8sKubeConfigPath  string
+	KVStore            string
+	KVStoreOpt         string
+	AccessLog          string
+	K8sNodeName        string
+	TunnelType         string
+}
 
 // BpfLBList returns the output of `cilium bpf lb list -o json` as a map
 // Key will be the frontend address and the value is an array with all backend
@@ -429,7 +444,7 @@ func (s *SSHMeta) PolicyImport(path string, timeout time.Duration) (int, error) 
 func (s *SSHMeta) PolicyRenderAndImport(policy string) (int, error) {
 	filename := fmt.Sprintf("policy_%s.json", MakeUID())
 	s.logger.Debugf("PolicyRenderAndImport: render policy to '%s'", filename)
-	err := RenderTemplateToFile(filename, policy, os.ModePerm)
+	err := RenderTemplateToFile(filename, policy, nil, os.ModePerm)
 	if err != nil {
 		s.logger.Errorf("PolicyRenderAndImport: cannot create policy file on '%s'", filename)
 		return 0, fmt.Errorf("cannot render the policy:  %s", err)
@@ -671,19 +686,70 @@ func (s *SSHMeta) ServiceDelAll() *CmdRes {
 
 // SetUpCilium sets up Cilium as a systemd service with a hardcoded set of options. It
 // returns an error if any of the operations needed to start Cilium fails.
-func (s *SSHMeta) SetUpCilium() error {
-	template := `
-PATH=/usr/lib/llvm-3.8/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin
-CILIUM_OPTS=--kvstore consul --kvstore-opt consul.address=127.0.0.1:8500 --debug --debug-verbose flow
-INITSYSTEM=SYSTEMD`
+func (s *SSHMeta) SetUpCilium(ciliumOpts *CiliumOpts) error {
+	if ciliumOpts == nil {
+		ciliumOpts = &CiliumOpts{
+			KVStore:      "consul",
+			KVStoreOpt:   "consul.address=127.0.0.1:8500",
+			Debug:        true,
+			DebugVerbose: "flow",
+		}
+	}
 
-	err := RenderTemplateToFile("cilium", template, os.ModePerm)
+	template := `PATH=/usr/lib/llvm-3.8/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin
+CILIUM_OPTS=--kvstore={{.KVStore}} --kvstore-opt={{.KVStoreOpt}} --debug={{.Debug}} --debug-verbose={{.DebugVerbose}}
+INITSYSTEM=SYSTEMD
+`
+
+	err := RenderTemplateToFile("cilium-opts", template, ciliumOpts, 0644)
 	if err != nil {
 		return err
 	}
-	defer os.Remove("cilium")
+	defer os.Remove("cilium-opts")
+	ciliumOptsPath := filepath.Join(s.ciliumRootPath, "test", "cilium-opts")
 
-	res := s.Exec("sudo cp /vagrant/cilium /etc/sysconfig/cilium")
+	res := s.Exec(fmt.Sprintf("sudo cp %s /etc/sysconfig/cilium", ciliumOptsPath))
+	if !res.WasSuccessful() {
+		return fmt.Errorf("%s", res.CombineOutput())
+	}
+	res = s.Exec("sudo systemctl restart cilium")
+	if !res.WasSuccessful() {
+		return fmt.Errorf("%s", res.CombineOutput())
+	}
+	return nil
+}
+
+// SetUpCilium sets up Cilium as a systemd service with a hardcoded set of options. It
+// returns an error if any of the operations needed to start Cilium fails.
+func (s *SSHMeta) SetUpCiliumK8s(ciliumOpts *CiliumOpts) error {
+	if ciliumOpts == nil {
+		ciliumOpts = &CiliumOpts{
+			AutoIPv6NodeRoutes: true,
+			KVStore:            "etcd",
+			KVStoreOpt:         "etcd.config=/var/lib/cilium/etcd-config.yml",
+			Debug:              true,
+			DebugVerbose:       "flow",
+			K8sKubeConfigPath:  "/var/lib/cilium/cilium.kubeconfig",
+			AccessLog:          "/var/log/cilium-access.log",
+		}
+	}
+	// Always overwrite the node's name with the one we are connecting to
+	ciliumOpts.K8sNodeName = s.nodeName
+
+	template := `PATH=/usr/local/clang/bin:/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/sbin:/bin
+INITSYSTEM=SYSTEMD
+K8S_NODE_NAME={{.K8sNodeName}}
+CILIUM_OPTS="--auto-ipv6-node-routes={{.AutoIPv6NodeRoutes}} --debug-verbose={{.DebugVerbose}} --k8s-kubeconfig-path={{.K8sKubeConfigPath}} --kvstore={{.KVStore}} --kvstore-opt={{.KVStoreOpt}} -t vxlan --access-log={{.AccessLog}}"
+`
+
+	err := RenderTemplateToFile("cilium-opts", template, ciliumOpts, 0644)
+	if err != nil {
+		return err
+	}
+	defer os.Remove("cilium-opts")
+	ciliumOptsPath := filepath.Join(s.ciliumRootPath, "test", "cilium-opts")
+
+	res := s.ExecWithSudo(fmt.Sprintf("cp %s /etc/sysconfig/cilium", ciliumOptsPath))
 	if !res.WasSuccessful() {
 		return fmt.Errorf("%s", res.CombineOutput())
 	}
