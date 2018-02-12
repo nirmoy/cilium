@@ -17,6 +17,8 @@ package helpers
 import (
 	"fmt"
 	"time"
+
+	"github.com/cilium/cilium/test/config"
 )
 
 var (
@@ -174,10 +176,16 @@ var ciliumKubCLICommands = map[string]string{
 
 // K8s1VMName is the name of the Kubernetes master node when running K8s tests.
 func K8s1VMName() string {
+	if config.CiliumTestConfig.Developer {
+		return K8s1
+	}
 	return fmt.Sprintf("%s-%s", K8s1, GetCurrentK8SEnv())
 }
 
 // K8s2VMName is the name of the Kubernetes worker node when running K8s tests.
 func K8s2VMName() string {
+	if config.CiliumTestConfig.Developer {
+		return K8s2
+	}
 	return fmt.Sprintf("%s-%s", K8s2, GetCurrentK8SEnv())
 }
