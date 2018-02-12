@@ -20,7 +20,7 @@ import (
 
 // ContainerExec executes cmd in the container with the provided name.
 func (s *SSHMeta) ContainerExec(name string, cmd string) *CmdRes {
-	return s.ExecWithSudo(fmt.Sprintf("docker exec -i %s %s", name, cmd))
+	return s.Exec(fmt.Sprintf("docker exec -i %s %s", name, cmd))
 }
 
 // ContainerCreate is a wrapper for `docker run`. It runs an instance of the
