@@ -447,8 +447,6 @@ func (e *Endpoint) regenerateBPF(owner Owner, epdir, reason string) (uint64, err
 		e.ProxyWaitGroup = nil
 	}()
 
-	e.removeCollectedRedirects(owner)
-
 	// If endpoint was marked as disconnected then
 	// it won't be regenerated.
 	// When building the initial drop policy in waiting-for-identity state
@@ -559,6 +557,12 @@ func (e *Endpoint) regenerateBPF(owner Owner, epdir, reason string) (uint64, err
 		}
 	}
 
+	// This is the list of proxy redirects that will be deleted by the call to
+	// e.removeCollectedRedirects(owner) below. Clean it up in case the policy
+	// is not recalculated, i.e. e.regeneratePolicy() is not called or the
+	// policy recalculation is skipped in that call.
+	e.proxiesToRemove = nil
+
 	var (
 		modifiedRules, deletedRules policy.SecurityIDContexts
 		policyChanged               bool
@@ -622,6 +626,10 @@ func (e *Endpoint) regenerateBPF(owner Owner, epdir, reason string) (uint64, err
 		}
 		c.Mutex.RUnlock()
 	}
+
+	// We can only remove obsolete redirects after calling e.regeneratePolicy
+	// above, which is when e.proxiesToRemove is populated.
+	e.removeCollectedRedirects(owner)
 
 	if err = e.writeHeaderfile(epdir, owner); err != nil {
 		e.Mutex.Unlock()

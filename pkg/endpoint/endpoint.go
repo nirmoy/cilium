@@ -335,8 +335,9 @@ type Endpoint struct {
 	// other resources
 	controllers controller.Manager
 
-	// proxy redirects to remove later during the build
-	proxiesToRemove map[string]bool
+	// proxiesToRemove is the set of IDs of proxy redirects to remove later
+	// during the build.
+	proxiesToRemove map[string]struct{}
 
 	// ProxyWaitGroup waits for pending proxy changes to complete.
 	// You must hold Endpoint.BuildMutex to read or write it.

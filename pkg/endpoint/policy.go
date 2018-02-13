@@ -94,7 +94,7 @@ func (e *Endpoint) addRedirect(owner Owner, l4 *policy.L4Filter) (uint16, error)
 // Called with endpoint lock Write locked!
 func (e *Endpoint) collectUnusedRedirects(oldMap, newMap policy.L4PolicyMap) {
 	if e.proxiesToRemove == nil {
-		e.proxiesToRemove = make(map[string]bool)
+		e.proxiesToRemove = make(map[string]struct{})
 	}
 
 	for k, v := range oldMap {
@@ -106,7 +106,7 @@ func (e *Endpoint) collectUnusedRedirects(oldMap, newMap policy.L4PolicyMap) {
 		}
 
 		if v.IsRedirect() {
-			e.proxiesToRemove[e.ProxyID(&v)] = true
+			e.proxiesToRemove[e.ProxyID(&v)] = struct{}{}
 		}
 	}
 }
