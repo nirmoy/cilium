@@ -458,20 +458,33 @@ func routeAdd(dstNode, podCIDR, dev string) error {
 }
 
 func routeDel(dstNode, podCIDR, dev string) error {
-	prog := "ip"
-
-	args := []string{"-6", "route", "del", podCIDR, "via", dstNode}
-	out, err := exec.Command(prog, args...).CombinedOutput()
+	podIP, _, err := net.ParseCIDR(podCIDR)
 	if err != nil {
-		return fmt.Errorf("unable to clean up old routing entry, command %s %s failed: %s: %s", prog,
-			strings.Join(args, " "), err, out)
+		return fmt.Errorf("invalid podCIDR %s", podCIDR)
 	}
-
-	args = []string{"-6", "route", "del", dstNode, "dev", dev}
-	out, err = exec.Command(prog, args...).CombinedOutput()
+	link, err := netlink.LinkByName(dev)
 	if err != nil {
-		return fmt.Errorf("unable to clean up old routing entry, command %s %s failed: %s: %s", prog,
-			strings.Join(args, " "), err, out)
+		return fmt.Errorf("unable to find device %s", dev)
+	}
+	routes, err := netlink.RouteList(link, netlink.FAMILY_V6)
+	if err != nil {
+		return fmt.Errorf("unable to route list: %s", err.Error())
+	}
+	for _, r := range routes {
+		if r.Dst == nil {
+			continue
+		}
+		if r.Dst.IP.Equal(podIP) {
+			if err := netlink.RouteDel(&r); err != nil {
+				return fmt.Errorf("unable to clean up old routing entry: %s", err.Error())
+			}
+		}
+		if r.Dst.IP.Equal(podIP) {
+			if err := netlink.RouteDel(&r); err != nil {
+				return fmt.Errorf("unable to clean up old routing entry: %s", err.Error())
+			}
+
+		}
 	}
 	return nil
 }
