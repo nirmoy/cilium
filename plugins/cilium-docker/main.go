@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 
 	"github.com/cilium/cilium/common"
+	"github.com/cilium/cilium/daemon/defaults"
 	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/plugins/cilium-docker/driver"
@@ -50,6 +51,16 @@ connected to a Docker network of type "cilium".`,
   docker run --net my_network hello-world
 `,
 	Run: func(cmd *cobra.Command, args []string) {
+		if ciliumAPI == "" {
+			// Check if environment variable points to socket
+			e := os.Getenv(defaults.SockPathEnv)
+			if e == "" {
+				// If unset, fall back to default value
+				e = defaults.SockPath
+			}
+			ciliumAPI = "unix://" + e
+		}
+
 		if d, err := driver.NewDriver(ciliumAPI); err != nil {
 			log.WithError(err).Fatal("Unable to create cilium-net driver")
 		} else {
