@@ -187,7 +187,7 @@ func addIPConfigToLink(ip addressing.CiliumIP, routes []route.Route, link netlin
 
 		if err := netlink.RouteAdd(rt); err != nil {
 			if !os.IsExist(err) {
-				return fmt.Errorf("failed to add route '%s via %v dev %v': %v",
+				log.WithField("route", logfields.Repr(rt)).Warn("failed to add route '%s via %v dev %v': %v",
 					r.Prefix.String(), r.Nexthop, ifName, err)
 			}
 		}
@@ -339,7 +339,7 @@ func cmdAdd(args *skel.CmdArgs) error {
 		Addressing:  &models.AddressPair{},
 	}
 
-	veth, peer, tmpIfName, err := connector.SetupVeth(ep.ContainerID, int(conf.DeviceMTU), ep)
+	veth, peer, tmpIfName, err := connector.SetupVeth(ep.ContainerID+args.IfName, int(conf.DeviceMTU), ep)
 	if err != nil {
 		return err
 	}
