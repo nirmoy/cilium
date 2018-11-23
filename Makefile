@@ -48,7 +48,7 @@ clean-ginkgo-tests:
 	docker-compose -f test/docker-compose.yml -p $(JOB_BASE_NAME)-$$BUILD_NUMBER down
 	docker-compose -f test/docker-compose.yml -p $(JOB_BASE_NAME)-$$BUILD_NUMBER rm
 
-TEST_LDFLAGS=-ldflags "-X github.com/cilium/cilium/pkg/kvstore.consulDummyAddress=consul:8500 -X github.com/cilium/cilium/pkg/kvstore.etcdDummyAddress=http://etcd:4002"
+TEST_LDFLAGS=-ldflags "-X github.com/cilium/cilium/pkg/kvstore.consulDummyAddress=consul:8443 -X github.com/cilium/cilium/pkg/kvstore.etcdDummyAddress=http://etcd:4002"
 
 # invoked from ginkgo compose file after starting kvstore backends
 tests-privileged:
@@ -70,22 +70,26 @@ start-kvstores:
         -initial-cluster-token etcd-cluster-1 \
         -initial-cluster-state new
 	-$(DOCKER) rm -f "cilium-consul-test-container" 2> /dev/null
+	$(CURDIR)/test/consul/gen-cert.sh gen consul 
 	$(DOCKER) run -d \
            --name "cilium-consul-test-container" \
-           -p 8501:8500 \
+           -p 8501:8443 \
            -e 'CONSUL_LOCAL_CONFIG={"skip_leave_on_interrupt": true, "disable_update_check": true}' \
+	   -v $(CURDIR)/test/consul/:/cilium-consul/ \
            consul:1.1.0 \
-           agent -client=0.0.0.0 -server -bootstrap-expect 1
+	   agent -client=0.0.0.0 -server -bootstrap-expect 1 -config-file=/cilium-consul/consul-config.json
 
 tests: force
 	$(MAKE) unit-tests
+
+TEST_UNITTEST_LDFLAGS= -ldflags "-X github.com/cilium/cilium/pkg/kvstore.consulDummyConfigFile=$(CURDIR)/test/consul/cilium-consul.yaml"
 
 unit-tests: start-kvstores
 	$(QUIET) $(MAKE) -C daemon/ check-bindata
 	$(QUIET) echo "mode: count" > coverage-all-tmp.out
 	$(QUIET) echo "mode: count" > coverage.out
 	$(QUIET)$(foreach pkg,$(TESTPKGS),\
-		$(GO) test $(pkg) $(GOTEST_BASE) $(GOTEST_COVER_OPTS) || exit 1; \
+		$(GO) test $(TEST_UNITTEST_LDFLAGS) $(pkg) $(GOTEST_BASE) $(GOTEST_COVER_OPTS) || exit 1; \
 		tail -n +2 coverage.out >> coverage-all-tmp.out;)
 	# Remove generated code from coverage
 	$(QUIET) grep -Ev '(^github.com/cilium/cilium/api/v1)|(generated.deepcopy.go)|(^github.com/cilium/cilium/pkg/k8s/client/)' \

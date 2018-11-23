@@ -1,0 +1,4 @@
+---
+cafile: './test/consul/consul-client-ca.crt'
+keyfile: './test/consul/consul-client.key'
+certfile: './test/consul/consul-client.crt'
