@@ -51,7 +51,7 @@ var (
 	//consulDummyAddress can be overwritten from test invokers using ldflags
 	consulDummyAddress = "https://127.0.0.1:8501"
 	//consulDummyConfigFile can be overwritten from test invokers using ldflags
-	consulDummyConfigFile = "test/consul/cilium-consul.yaml"
+	consulDummyConfigFile = "/tmp/cilium-consul-certs/cilium-consul.yaml"
 
 	module = &consulModule{
 		opts: backendOptions{
@@ -172,6 +172,7 @@ func newConsulClient(config *consulAPI.Config) (BackendOperations, error) {
 	for i := 0; i < maxRetries; i++ {
 		var leader string
 		leader, err = c.Status().Leader()
+		log.Info(leader)
 
 		if err == nil {
 			if leader != "" {
@@ -181,7 +182,7 @@ func newConsulClient(config *consulAPI.Config) (BackendOperations, error) {
 				err = errors.New("timeout while waiting for leader to be elected")
 			}
 		}
-
+		log.Info(err)
 		boff.Wait()
 	}
 

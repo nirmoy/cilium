@@ -70,12 +70,14 @@ start-kvstores:
         -initial-cluster-token etcd-cluster-1 \
         -initial-cluster-state new
 	-$(DOCKER) rm -f "cilium-consul-test-container" 2> /dev/null
-	$(CURDIR)/test/consul/gen-cert.sh gen consul 
+	rm -rf /tmp/cilium-consul-certs
+	mkdir /tmp/cilium-consul-certs
+	cp $(CURDIR)/test/consul/* /tmp/cilium-consul-certs
 	$(DOCKER) run -d \
            --name "cilium-consul-test-container" \
            -p 8501:8443 \
            -e 'CONSUL_LOCAL_CONFIG={"skip_leave_on_interrupt": true, "disable_update_check": true}' \
-	   -v $(CURDIR)/test/consul/:/cilium-consul/ \
+	   -v /tmp/cilium-consul-certs:/cilium-consul/ \
            consul:1.1.0 \
 	   agent -client=0.0.0.0 -server -bootstrap-expect 1 -config-file=/cilium-consul/consul-config.json
 
@@ -99,6 +101,7 @@ unit-tests: start-kvstores
 	@rmdir ./daemon/1 ./daemon/1_backup 2> /dev/null || true
 	$(DOCKER) rm -f "cilium-etcd-test-container"
 	$(DOCKER) rm -f "cilium-consul-test-container"
+	rm -rf /tmp/cilium-consul-certs
 
 clean-tags:
 	@$(ECHO_CLEAN) tags

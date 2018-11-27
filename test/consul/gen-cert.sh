@@ -57,7 +57,7 @@ gen() {
 	cfssl gencert -initca ca-csr.json | cfssljson -bare ca
 
 
-	echo "generating consul server certs === $1"
+	echo "generating consul server certs ==="
 	cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -hostname="$1,localhost,127.0.0.1" -config=ca-config.json -profile=server server.json | cfssljson -bare server
 
 	echo "generating consul client certs ==="
